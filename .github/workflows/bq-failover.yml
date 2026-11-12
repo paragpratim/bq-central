@@ -1,0 +1,97 @@
+name: BigQuery Reservation Failover
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_location:
+        description: 'Location to promote to primary (the current secondary)'
+        required: true
+        type: choice
+        options:
+          - europe-west1
+          - europe-west4
+      failover_mode:
+        description: 'HARD = immediate (may lose unreplicated data), SOFT = waits for replication to catch up'
+        required: true
+        default: 'SOFT'
+        type: choice
+        options:
+          - SOFT
+          - HARD
+      reservation_name:
+        description: 'Reservation name'
+        required: true
+        default: 'central-dr'
+        type: string
+      confirm:
+        description: 'Type FAILOVER to confirm'
+        required: true
+        type: string
+
+concurrency:
+  group: bq-failover
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: ${{ secrets.BQ_CENTRAL_PROJECT_ID }}
+
+jobs:
+  failover:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "FAILOVER" ]; then
+            echo "::error::Confirmation text must be exactly FAILOVER"
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/${{ secrets.DEPLOYMENT_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/${{ secrets.WIF_POOL_NAME }}/providers/${{ secrets.WIF_PROVIDER_NAME }}'
+          service_account: ${{ secrets.DEPLOYMENT_SVC }}
+          audience: ${{ secrets.WIF_AUDIENCE }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Fail over reservation
+        env:
+          TARGET_LOCATION: ${{ inputs.target_location }}
+          FAILOVER_MODE: ${{ inputs.failover_mode }}
+          RESERVATION_NAME: ${{ inputs.reservation_name }}
+        run: |
+          set -euo pipefail
+          bq --project_id="$PROJECT_ID" --location="$TARGET_LOCATION" query \
+            --nouse_legacy_sql \
+            "ALTER RESERVATION \`${PROJECT_ID}.region-${TARGET_LOCATION}.${RESERVATION_NAME}\`
+             SET OPTIONS (is_primary = TRUE, failover_mode = '${FAILOVER_MODE}')"
+
+      - name: Show reservation state
+        env:
+          TARGET_LOCATION: ${{ inputs.target_location }}
+          FAILOVER_MODE: ${{ inputs.failover_mode }}
+          RESERVATION_NAME: ${{ inputs.reservation_name }}
+        run: |
+          {
+            echo "## BigQuery failover"
+            echo "- **Reservation:** ${PROJECT_ID}.${RESERVATION_NAME}"
+            echo "- **New primary:** ${TARGET_LOCATION}"
+            echo "- **Mode:** ${FAILOVER_MODE}"
+            echo ""
+            echo '```json'
+            bq --project_id="$PROJECT_ID" --location="$TARGET_LOCATION" show \
+              --format=prettyjson --reservation "${PROJECT_ID}:${TARGET_LOCATION}.${RESERVATION_NAME}" || true
+            echo '```'
+            echo ""
+            echo "Next: point jobs at location \`${TARGET_LOCATION}\` and re-run the Terraform deploy to reapply dataset IAM."
+          } >> "$GITHUB_STEP_SUMMARY"
