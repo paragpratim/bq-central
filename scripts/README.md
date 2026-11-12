@@ -81,6 +81,13 @@ bash scripts/test_primary.sh   # Netherlands, europe-west4
 bash scripts/test_secondary.sh # Belgium, europe-west1
 ```
 
+If using the `python` interpreter on your PATH instead of `.venv/bin/python`,
+run the Netherlands tests with:
+
+```sh
+PYTHON=python bash scripts/test_primary.sh
+```
+
 The Netherlands helper uses `test_parquet_1` and `test_parquet_2`; the Belgium
 helper uses `test_parquet_1_2` and `test_parquet_2_2`. Both expect the
 no-reservation jobs to fail with the Enterprise Plus restriction and stop on
