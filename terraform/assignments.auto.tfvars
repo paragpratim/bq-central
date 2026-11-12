@@ -1,3 +1,6 @@
+# Test cleanup removes datasets and their contents.
+delete_dataset_contents_on_destroy = true
+
 bq_reservation = {
   name                = "central-dr"
   location            = "europe-west4" # Netherlands (primary)

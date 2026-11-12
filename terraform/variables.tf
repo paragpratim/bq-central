@@ -8,6 +8,12 @@ variable "region" {
   type        = string
 }
 
+variable "delete_dataset_contents_on_destroy" {
+  description = "Allow dataset destruction to delete all contained tables and other contents."
+  type        = bool
+  default     = false
+}
+
 variable "bq_reservation" {
   description = "Central BigQuery reservation (Enterprise Plus, managed DR, active-passive)."
   type = object({

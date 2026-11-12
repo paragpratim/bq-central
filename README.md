@@ -43,8 +43,20 @@ receive an `_dr` suffix if they do not already have one.
 Terraform 1.7+, `bq`, `jq` and deployment credentials with the required
 cross-project permissions are needed. The DR provisioner waits up to 30 minutes
 for replication and verifies attachment, but does not continuously detect DR
-changes. Check DR status after manual changes or failover. Datasets have
-destruction protection and must be managed by only one Terraform state.
+changes. Check DR status after manual changes or failover. Datasets must be
+managed by only one Terraform state.
+
+**Test cleanup:** This configuration permits Terraform to destroy datasets and
+sets `delete_dataset_contents_on_destroy = true`, deleting all contained tables
+and data. Apply this setting before running destroy so it is recorded in state;
+review the plan and back up any data first.
+
+**Production:** Before deployment, set `delete_dataset_contents_on_destroy` to
+`false` and add `prevent_destroy = true` to the dataset's lifecycle block in
+[datasets.tf](terraform/datasets.tf). Terraform requires `prevent_destroy` to
+be a literal, not a variable. The workflow's `env` choice does not currently
+select separate configuration or state and does not provide production
+protection by itself.
 
 The reservation has zero baseline slots, an autoscale maximum of 50 and idle
 slot sharing enabled, so total available slots may exceed 50. Storage,

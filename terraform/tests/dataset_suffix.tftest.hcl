@@ -4,8 +4,9 @@ run "dataset_suffix" {
   command = plan
 
   variables {
-    project_id = "central-test"
-    region     = "europe-west4"
+    project_id                         = "central-test"
+    region                             = "europe-west4"
+    delete_dataset_contents_on_destroy = true
     bq_consumers = {
       first = {
         project_id            = "jobs-test"
@@ -38,5 +39,34 @@ run "dataset_suffix" {
   assert {
     condition     = terraform_data.dataset_dr["data-test.raw_data_dr"].triggers_replace.dataset_id == "raw_data_dr"
     error_message = "DR setup must target the suffixed dataset."
+  }
+
+  assert {
+    condition     = google_bigquery_dataset.dr["data-test.raw_data_dr"].delete_contents_on_destroy
+    error_message = "Test datasets must allow contents to be deleted when enabled."
+  }
+}
+
+run "preserve_dataset_contents" {
+  command = plan
+
+  variables {
+    project_id                         = "central-test"
+    region                             = "europe-west4"
+    delete_dataset_contents_on_destroy = false
+    bq_consumers = {
+      first = {
+        project_id            = "jobs-test"
+        service_account_email = "first@jobs-test.iam.gserviceaccount.com"
+        datasets = [
+          { project_id = "data-test", dataset_id = "raw_data" },
+        ]
+      }
+    }
+  }
+
+  assert {
+    condition     = !google_bigquery_dataset.dr["data-test.raw_data_dr"].delete_contents_on_destroy
+    error_message = "Dataset contents must be preserved when deletion is disabled."
   }
 }
