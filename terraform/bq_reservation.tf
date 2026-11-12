@@ -3,10 +3,10 @@ locals {
   dataset_grants = merge([
     for ck, c in var.bq_consumers : {
       for d in c.datasets :
-      "${ck}|${d.project_id}|${d.dataset_id}" => {
+      "${ck}|${d.project_id}|${trimsuffix(d.dataset_id, "_dr")}_dr" => {
         member     = "serviceAccount:${c.service_account_email}"
         project_id = d.project_id
-        dataset_id = d.dataset_id
+        dataset_id = "${trimsuffix(d.dataset_id, "_dr")}_dr"
         role       = d.role
       }
     }
@@ -69,8 +69,8 @@ resource "google_project_iam_member" "reservation_user" {
 resource "google_bigquery_dataset_iam_member" "consumer" {
   for_each = local.dataset_grants
 
-  project    = each.value.project_id
-  dataset_id = each.value.dataset_id
+  project    = google_bigquery_dataset.dr["${each.value.project_id}.${each.value.dataset_id}"].project
+  dataset_id = google_bigquery_dataset.dr["${each.value.project_id}.${each.value.dataset_id}"].dataset_id
   role       = each.value.role
   member     = each.value.member
 }
@@ -96,7 +96,7 @@ resource "google_bigquery_job" "dataset_replica" {
     ignore_changes = all
   }
 
-  depends_on = [google_bigquery_reservation.central]
+  depends_on = [google_bigquery_reservation.central, google_bigquery_dataset.dr]
 }
 
 # Attaching enforces that only Enterprise Plus reservations can write to the

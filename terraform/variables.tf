@@ -25,7 +25,7 @@ variable "bq_reservation" {
 }
 
 variable "bq_consumers" {
-  description = "Map of consumers: the project assigned to the reservation, its existing service account, and the datasets (any project) it may access."
+  description = "Map of consumers, their existing service accounts, and datasets to create and grant access to. Dataset IDs receive a _dr suffix if not already present."
   type = map(object({
     project_id            = string
     service_account_email = string
