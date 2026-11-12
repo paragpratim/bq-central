@@ -14,13 +14,13 @@ variable "bq_reservation" {
     name                = optional(string, "central-dr")
     location            = optional(string, "europe-west4") # Netherlands (primary)
     secondary_location  = optional(string, "europe-west1") # Belgium (secondary)
-    autoscale_max_slots = optional(number, 20)
+    autoscale_max_slots = optional(number, 50)
   })
   default = {}
 
   validation {
-    condition     = var.bq_reservation.autoscale_max_slots >= 0 && var.bq_reservation.autoscale_max_slots <= 20
-    error_message = "autoscale_max_slots must be between 0 and 20."
+    condition     = var.bq_reservation.autoscale_max_slots >= 0 && var.bq_reservation.autoscale_max_slots <= 50
+    error_message = "autoscale_max_slots must be between 0 and 50."
   }
 }
 

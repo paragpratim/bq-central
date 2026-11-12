@@ -2,7 +2,7 @@ bq_reservation = {
   name                = "central-dr"
   location            = "europe-west4" # Netherlands (primary)
   secondary_location  = "europe-west1" # Belgium (secondary)
-  autoscale_max_slots = 20
+  autoscale_max_slots = 50
 }
 
 # One entry per project that runs jobs on the central reservation.
