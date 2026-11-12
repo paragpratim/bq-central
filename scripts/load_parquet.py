@@ -4,38 +4,41 @@ import argparse
 
 from google.cloud import bigquery
 
-JOB_PROJECT = "dataflow-test-290e"
-SOURCE_URI = "gs://dataflow-staging-dataflow-test-290e/test_data/*.parquet"
-DESTINATION = "gcp-data-management-e0e9.raw_data_dr.test_parquet_1"
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--job-project", required=True, help="Job and billing project")
+    parser.add_argument("--dataset-project", required=True, help="Destination dataset project")
+    parser.add_argument("--dataset", required=True, help="Destination dataset ID")
+    parser.add_argument("--table", required=True, help="Destination table ID")
+    parser.add_argument("--source-uri", required=True, help="Parquet Cloud Storage URI")
     parser.add_argument(
         "--reservation",
         help="Full reservation name: projects/PROJECT/locations/LOCATION/reservations/NAME",
     )
     parser.add_argument(
         "--location",
-        default="europe-west4",
-        help="Dataset and job location (default: europe-west4)",
+        required=True,
+        help="Dataset and job location",
     )
     args = parser.parse_args()
+    destination = f"{args.dataset_project}.{args.dataset}.{args.table}"
 
     config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.PARQUET,
-        write_disposition=bigquery.WriteDisposition.WRITE_EMPTY,
+        create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
     )
     if args.reservation:
         config.reservation = args.reservation
 
-    client = bigquery.Client(project=JOB_PROJECT)
+    client = bigquery.Client(project=args.job_project)
     job = client.load_table_from_uri(
-        SOURCE_URI, DESTINATION, job_config=config, location=args.location
+        args.source_uri, destination, job_config=config, location=args.location
     )
     print(f"Submitted job {job.project}:{job.location}.{job.job_id}", flush=True)
     job.result()
-    print(f"Loaded {job.output_rows} rows into {DESTINATION}")
+    print(f"Loaded {job.output_rows} rows into {destination}")
 
 
 if __name__ == "__main__":
