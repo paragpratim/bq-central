@@ -75,48 +75,45 @@ resource "google_bigquery_dataset_iam_member" "consumer" {
   member     = each.value.member
 }
 
-# Terraform's dataset resource has no replica support, so use DDL.
-resource "google_bigquery_job" "dataset_replica" {
-  for_each = local.replicated_datasets
-
-  project  = var.project_id
-  location = var.bq_reservation.location
-  job_id   = "add-replica-${replace(each.key, ".", "-")}-${var.bq_reservation.secondary_location}"
-
-  query {
-    use_legacy_sql = false
-    query          = <<-SQL
-      ALTER SCHEMA `${each.key}`
-      ADD REPLICA `${var.bq_reservation.secondary_location}`
-      OPTIONS (location = '${var.bq_reservation.secondary_location}')
-    SQL
-  }
+removed {
+  from = google_bigquery_job.dataset_replica
 
   lifecycle {
-    ignore_changes = all
+    destroy = false
   }
-
-  depends_on = [google_bigquery_reservation.central, google_bigquery_dataset.dr]
 }
 
-# Attaching enforces that only Enterprise Plus reservations can write to the
-# dataset. The replica must be backfilled first; re-run apply if this fails
-# right after the replica is created.
-resource "google_bigquery_job" "dataset_attach" {
-  for_each = local.replicated_datasets
-
-  project  = var.project_id
-  location = var.bq_reservation.location
-  job_id   = "attach-${replace(each.key, ".", "-")}"
-
-  query {
-    use_legacy_sql = false
-    query          = "ALTER SCHEMA `${each.key}` SET OPTIONS (failover_reservation = ${var.project_id}.${google_bigquery_reservation.central.name})"
-  }
+removed {
+  from = google_bigquery_job.dataset_attach
 
   lifecycle {
-    ignore_changes = all
+    destroy = false
+  }
+}
+
+resource "terraform_data" "dataset_dr" {
+  for_each = google_bigquery_dataset.dr
+
+  triggers_replace = {
+    admin_project      = var.project_id
+    dataset_project    = each.value.project
+    dataset_id         = each.value.dataset_id
+    primary_location   = var.bq_reservation.location
+    secondary_location = var.bq_reservation.secondary_location
+    reservation        = google_bigquery_reservation.central.name
   }
 
-  depends_on = [google_bigquery_job.dataset_replica]
+  provisioner "local-exec" {
+    command = "bash \"${path.module}/scripts/configure_dataset_dr.sh\""
+    environment = {
+      ADMIN_PROJECT      = self.triggers_replace.admin_project
+      DATASET_PROJECT    = self.triggers_replace.dataset_project
+      DATASET_ID         = self.triggers_replace.dataset_id
+      PRIMARY_LOCATION   = self.triggers_replace.primary_location
+      SECONDARY_LOCATION = self.triggers_replace.secondary_location
+      RESERVATION        = self.triggers_replace.reservation
+    }
+  }
+
+  depends_on = [google_bigquery_reservation.central]
 }

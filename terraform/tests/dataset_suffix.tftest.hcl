@@ -36,7 +36,7 @@ run "dataset_suffix" {
   }
 
   assert {
-    condition     = strcontains(google_bigquery_job.dataset_replica["data-test.raw_data_dr"].query[0].query, "`data-test.raw_data_dr`") && strcontains(google_bigquery_job.dataset_attach["data-test.raw_data_dr"].query[0].query, "`data-test.raw_data_dr`")
-    error_message = "Replica and attachment jobs must target the suffixed dataset."
+    condition     = terraform_data.dataset_dr["data-test.raw_data_dr"].triggers_replace.dataset_id == "raw_data_dr"
+    error_message = "DR setup must target the suffixed dataset."
   }
 }
