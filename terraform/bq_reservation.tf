@@ -75,22 +75,6 @@ resource "google_bigquery_dataset_iam_member" "consumer" {
   member     = each.value.member
 }
 
-removed {
-  from = google_bigquery_job.dataset_replica
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = google_bigquery_job.dataset_attach
-
-  lifecycle {
-    destroy = false
-  }
-}
-
 resource "terraform_data" "dataset_dr" {
   for_each = google_bigquery_dataset.dr
 
