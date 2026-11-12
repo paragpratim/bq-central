@@ -45,5 +45,10 @@ terraform.rc
 # Uncomment the line below if you want to ignore planout files.
 # planout
 
-# Local Scripts
-scripts/
+# Python cache and virtual environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
