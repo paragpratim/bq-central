@@ -4,11 +4,11 @@ This Java Beam job generates random integers continuously and writes them to a
 BigQuery table with the exactly-once `STORAGE_WRITE_API` method. It uses the
 workload service account and does **not** select a BigQuery reservation. This
 tests the Storage Write API, not the load or query jobs in
-[scripts/README.md](../scripts/README.md).
-Those earlier job failures do not prove that Storage Write API writes will fail; record
-the actual result and error. The job can keep running and retrying an error
-instead of reaching a terminal failed state. This is a test, not a production
-pipeline or a reliable dead-letter strategy.
+[scripts/README.md](../scripts/README.md). Those earlier job failures do not
+prove that Storage Write API writes will fail; record the actual result and
+error. The job can keep running and retrying an error instead of reaching a
+terminal failed state. This is a test, not a production pipeline or a reliable
+dead-letter strategy.
 
 The destination table is created if needed with this schema:
 
@@ -18,7 +18,7 @@ The destination table is created if needed with this schema:
 | `random_value` | `INTEGER` | `REQUIRED` |
 
 Use an isolated test table in the DR-attached dataset. If the table already
-exists, it must have a compatible schema; successful inserts append data.
+exists, it must have a compatible schema; successful writes append data.
 Confirm the dataset and reservation exist and that the job region is the
 **current dataset primary**; otherwise, a missing resource or read-only replica
 can produce an unrelated failure. Table creation can itself fail due to
@@ -66,7 +66,7 @@ SUBNETWORK=regions/europe-west4/subnetworks/SUBNETWORK_NAME bash dataflow/submit
 
 The script uses private IPs, starts with one worker and caps it at one worker.
 It submits billable resources using local ADC and stages code and dependencies
-in the bucket. A successful submission is not evidence that the insert test
+in the bucket. A successful submission is not evidence that the write test
 passed.
 
 The test uses the BigQuery Storage Write API, which does not submit a

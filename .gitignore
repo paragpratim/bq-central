@@ -53,3 +53,6 @@ __pycache__/
 venv/
 env/
 dataflow/target/
+
+# Ignore IntelliJ IDEA project files
+.idea/
