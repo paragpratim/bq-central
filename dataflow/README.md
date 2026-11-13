@@ -43,6 +43,22 @@ Run local tests from the repository root:
 mvn -f dataflow/pom.xml test
 ```
 
+The Beam dependencies use the shared `beam.version` property in `pom.xml`.
+Maven checks the local repository (`~/.m2/repository`) automatically, so to use
+a locally published Beam build, pass its exact published version:
+
+```sh
+mvn -f dataflow/pom.xml -Dbeam.version=LOCAL_BEAM_VERSION test
+```
+
+Find the installed version under
+`~/.m2/repository/org/apache/beam/beam-sdks-java-io-google-cloud-platform/`.
+The version must match the one published by your Beam checkout. All Beam
+dependencies in this project use that same version. The GCP IO artifact also
+depends on other Beam modules, so publishing only GCP IO is not enough for a
+local snapshot: publish its Beam dependency modules locally at that same version
+as well.
+
 ## Submit from your machine
 
 The [submission script](submit.sh) builds the job and submits it to
@@ -54,6 +70,13 @@ Confirm that `europe-west4` is the current primary.
 
 ```sh
 bash dataflow/submit.sh
+```
+
+To submit using your locally published Beam build, set its exact published
+version:
+
+```sh
+BEAM_VERSION=LOCAL_BEAM_VERSION bash dataflow/submit.sh
 ```
 
 Set `REGION`, `OUTPUT_TABLE`, `STAGING_BUCKET`, or `SUBNETWORK` to override

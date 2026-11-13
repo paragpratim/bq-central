@@ -8,8 +8,11 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.GenerateSequence;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
+import org.apache.beam.sdk.io.gcp.bigquery.BigQueryInsertError;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryStorageApiInsertError;
+import org.apache.beam.sdk.io.gcp.bigquery.InsertRetryPolicy;
 import org.apache.beam.sdk.io.gcp.bigquery.WriteResult;
+import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.StreamingOptions;
@@ -25,6 +28,11 @@ public final class StreamingDrTest {
     @Validation.Required
     String getOutputTable();
     void setOutputTable(String value);
+
+    @Description("BigQuery write method: STORAGE_WRITE_API, STREAMING_INSERTS, or FILE_LOADS")
+    @Default.Enum("STORAGE_WRITE_API")
+    BigQueryIO.Write.Method getWriteMethod();
+    void setWriteMethod(BigQueryIO.Write.Method value);
   }
 
   static TableSchema schema() {
@@ -49,26 +57,62 @@ public final class StreamingDrTest {
     }
   }
 
-  static BigQueryIO.Write<TableRow> bigQueryWrite(String outputTable) {
-    return BigQueryIO.writeTableRows()
+  static class ReportStreamingInsertFailure extends DoFn<BigQueryInsertError, Void> {
+    @ProcessElement
+    public void process(@Element BigQueryInsertError error) {
+      throw new IllegalStateException("BigQuery streaming insert failed: " + error.getError());
+    }
+  }
+
+  static BigQueryIO.Write<TableRow> bigQueryWrite(
+      String outputTable, BigQueryIO.Write.Method method) {
+    BigQueryIO.Write<TableRow> write = BigQueryIO.writeTableRows()
         .to(outputTable)
         .withSchema(schema())
         .withCreateDisposition(BigQueryIO.Write.CreateDisposition.CREATE_IF_NEEDED)
         .withWriteDisposition(BigQueryIO.Write.WriteDisposition.WRITE_APPEND)
-        .withMethod(BigQueryIO.Write.Method.STORAGE_WRITE_API)
-        .withNumStorageWriteApiStreams(1)
-        .withTriggeringFrequency(Duration.standardSeconds(5));
+        .withMethod(method);
+    switch (method) {
+      case STORAGE_WRITE_API:
+        return write.withNumStorageWriteApiStreams(1)
+            .withTriggeringFrequency(Duration.standardSeconds(5));
+      case STREAMING_INSERTS:
+        return write.withExtendedErrorInfo()
+            .withFailedInsertRetryPolicy(InsertRetryPolicy.neverRetry());
+      case FILE_LOADS:
+        return write.withTriggeringFrequency(Duration.standardMinutes(1));
+      default:
+        throw new IllegalArgumentException("Unsupported BigQuery write method: " + method);
+    }
+  }
+
+  static void surfaceWriteErrors(WriteResult result, BigQueryIO.Write.Method method) {
+    switch (method) {
+      case STORAGE_WRITE_API:
+        result.getFailedStorageApiInserts().apply("Surface write errors", ParDo.of(new ReportFailure()));
+        break;
+      case STREAMING_INSERTS:
+        result.getFailedInsertsWithErr()
+            .apply("Surface insert errors", ParDo.of(new ReportStreamingInsertFailure()));
+        break;
+      case FILE_LOADS:
+        break;
+      default:
+        throw new IllegalArgumentException("Unsupported BigQuery write method: " + method);
+    }
   }
 
   public static void main(String[] args) {
     Options options = PipelineOptionsFactory.fromArgs(args).withValidation().as(Options.class);
     options.setStreaming(true);
+    BigQueryIO.Write.Method method = options.getWriteMethod();
+    BigQueryIO.Write<TableRow> write = bigQueryWrite(options.getOutputTable(), method);
     Pipeline pipeline = Pipeline.create(options);
     WriteResult result = pipeline
         .apply("Generate sequence", GenerateSequence.from(0).withRate(1, Duration.standardSeconds(1)))
         .apply("Generate random rows", ParDo.of(new GenerateRow()))
-        .apply("Write with Storage Write API", bigQueryWrite(options.getOutputTable()));
-    result.getFailedStorageApiInserts().apply("Surface write errors", ParDo.of(new ReportFailure()));
+        .apply("Write to BigQuery", write);
+    surfaceWriteErrors(result, method);
     pipeline.run();
   }
 }
