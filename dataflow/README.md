@@ -1,10 +1,11 @@
 # Dataflow streaming write test
 
-This Java Beam job generates random integers continuously and writes
-them to a BigQuery table with `STREAMING_INSERTS`. It uses the workload service
-account and does **not** select a BigQuery reservation. This tests the streaming
-insert API, not the load or query jobs in [scripts/README.md](../scripts/README.md).
-Those earlier job failures do not prove that streaming inserts will fail; record
+This Java Beam job generates random integers continuously and writes them to a
+BigQuery table with the exactly-once `STORAGE_WRITE_API` method. It uses the
+workload service account and does **not** select a BigQuery reservation. This
+tests the Storage Write API, not the load or query jobs in
+[scripts/README.md](../scripts/README.md).
+Those earlier job failures do not prove that Storage Write API writes will fail; record
 the actual result and error. The job can keep running and retrying an error
 instead of reaching a terminal failed state. This is a test, not a production
 pipeline or a reliable dead-letter strategy.
@@ -21,7 +22,7 @@ exists, it must have a compatible schema; successful inserts append data.
 Confirm the dataset and reservation exist and that the job region is the
 **current dataset primary**; otherwise, a missing resource or read-only replica
 can produce an unrelated failure. Table creation can itself fail due to
-permissions or DR restrictions, before streaming inserts are attempted.
+permissions or DR restrictions, before writes are attempted.
 
 ## Prerequisites
 
@@ -68,12 +69,14 @@ It submits billable resources using local ADC and stages code and dependencies
 in the bucket. A successful submission is not evidence that the insert test
 passed.
 
-The test uses the BigQuery streaming insert API, which does not submit a
+The test uses the BigQuery Storage Write API, which does not submit a
 BigQuery load or query job and does not expose a per-job reservation option.
-Use Dataflow job logs and the `Write streaming inserts` and
-`Surface insert errors` stages to distinguish BigQuery rejection from setup,
-IAM, networking, or missing-table failures. An insert rejection is surfaced
-through the worker exception; Dataflow may retry bundles repeatedly.
+It uses one write stream with a five-second triggering frequency. Use Dataflow
+job logs and the `Write with Storage Write API` and `Surface write errors`
+stages to distinguish BigQuery rejection from setup, IAM, networking, or
+missing-table failures. Row-level write errors are surfaced through a worker
+exception; other errors can occur before they reach that output. Dataflow may
+retry bundles repeatedly.
 
 This is an unbounded job and can continue accruing charges even on errors.
 Cancel it in the Dataflow console when finished. Do not infer success or failure

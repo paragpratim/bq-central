@@ -8,8 +8,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.GenerateSequence;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
-import org.apache.beam.sdk.io.gcp.bigquery.BigQueryInsertError;
-import org.apache.beam.sdk.io.gcp.bigquery.InsertRetryPolicy;
+import org.apache.beam.sdk.io.gcp.bigquery.BigQueryStorageApiInsertError;
 import org.apache.beam.sdk.io.gcp.bigquery.WriteResult;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
@@ -43,10 +42,10 @@ public final class StreamingDrTest {
     }
   }
 
-  static class ReportFailure extends DoFn<BigQueryInsertError, Void> {
+  static class ReportFailure extends DoFn<BigQueryStorageApiInsertError, Void> {
     @ProcessElement
-    public void process(@Element BigQueryInsertError error) {
-      throw new IllegalStateException("BigQuery streaming insert failed: " + error.getError());
+    public void process(@Element BigQueryStorageApiInsertError error) {
+      throw new IllegalStateException("BigQuery Storage Write API failed: " + error.getErrorMessage());
     }
   }
 
@@ -56,9 +55,9 @@ public final class StreamingDrTest {
         .withSchema(schema())
         .withCreateDisposition(BigQueryIO.Write.CreateDisposition.CREATE_IF_NEEDED)
         .withWriteDisposition(BigQueryIO.Write.WriteDisposition.WRITE_APPEND)
-        .withMethod(BigQueryIO.Write.Method.STREAMING_INSERTS)
-        .withExtendedErrorInfo()
-        .withFailedInsertRetryPolicy(InsertRetryPolicy.neverRetry());
+        .withMethod(BigQueryIO.Write.Method.STORAGE_WRITE_API)
+        .withNumStorageWriteApiStreams(1)
+        .withTriggeringFrequency(Duration.standardSeconds(5));
   }
 
   public static void main(String[] args) {
@@ -68,8 +67,8 @@ public final class StreamingDrTest {
     WriteResult result = pipeline
         .apply("Generate sequence", GenerateSequence.from(0).withRate(1, Duration.standardSeconds(1)))
         .apply("Generate random rows", ParDo.of(new GenerateRow()))
-        .apply("Write streaming inserts", bigQueryWrite(options.getOutputTable()));
-    result.getFailedInsertsWithErr().apply("Surface insert errors", ParDo.of(new ReportFailure()));
+        .apply("Write with Storage Write API", bigQueryWrite(options.getOutputTable()));
+    result.getFailedStorageApiInserts().apply("Surface write errors", ParDo.of(new ReportFailure()));
     pipeline.run();
   }
 }

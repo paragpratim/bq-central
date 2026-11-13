@@ -5,7 +5,8 @@ import static org.junit.Assert.assertTrue;
 
 import com.google.api.services.bigquery.model.TableRow;
 import java.util.List;
-import org.apache.beam.sdk.io.gcp.bigquery.BigQueryInsertError;
+import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
+import org.apache.beam.sdk.io.gcp.bigquery.BigQueryStorageApiInsertError;
 import org.apache.beam.sdk.transforms.DoFnTester;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.joda.time.Instant;
@@ -14,8 +15,9 @@ import org.junit.Test;
 public class StreamingDrTestTest {
   @Test
   public void createsMissingTableAndAppendsToExistingTable() {
-    DisplayData displayData = DisplayData.from(
-        StreamingDrTest.bigQueryWrite("test-project:test_dataset.test_table"));
+    BigQueryIO.Write<TableRow> write = StreamingDrTest.bigQueryWrite("test-project:test_dataset.test_table");
+    DisplayData displayData = DisplayData.from(write);
+    assertEquals(BigQueryIO.Write.Method.STORAGE_WRITE_API, write.getMethod());
     assertTrue(displayData.items().stream().anyMatch(
         item -> item.getKey().equals("createDisposition") && item.getValue().equals("CREATE_IF_NEEDED")));
     assertTrue(displayData.items().stream().anyMatch(
@@ -36,10 +38,10 @@ public class StreamingDrTestTest {
   @Test
   public void insertFailuresAreSurfaced() {
     try {
-      new StreamingDrTest.ReportFailure().process(new BigQueryInsertError(null, null, null));
+      new StreamingDrTest.ReportFailure().process(new BigQueryStorageApiInsertError(new TableRow(), "test error"));
       throw new AssertionError("Expected failure");
     } catch (IllegalStateException expected) {
-      assertTrue(expected.getMessage().contains("BigQuery streaming insert failed"));
+      assertTrue(expected.getMessage().contains("BigQuery Storage Write API failed: test error"));
     }
   }
 }
