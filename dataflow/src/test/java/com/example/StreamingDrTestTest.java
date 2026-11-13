@@ -1,6 +1,7 @@
 package com.example;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -9,6 +10,7 @@ import com.google.api.services.bigquery.model.TableDataInsertAllResponse.InsertE
 import com.google.api.services.bigquery.model.TableRow;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.PipelineRunner;
@@ -20,7 +22,9 @@ import org.apache.beam.sdk.io.gcp.bigquery.WriteResult;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.StreamingOptions;
+import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.transforms.DoFnTester;
+import org.apache.beam.sdk.transforms.GroupIntoBatches;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.joda.time.Duration;
@@ -67,6 +71,19 @@ public class StreamingDrTestTest {
           .apply(StreamingDrTest.bigQueryWrite(
               "test-project:test_dataset.test_table", method).withoutValidation());
       StreamingDrTest.surfaceWriteErrors(result, method);
+      if (method == BigQueryIO.Write.Method.FILE_LOADS) {
+        AtomicBoolean runnerSharding = new AtomicBoolean();
+        pipeline.traverseTopologically(new Pipeline.PipelineVisitor.Defaults() {
+          @Override
+          public CompositeBehavior enterCompositeTransform(TransformHierarchy.Node node) {
+            if (node.getTransform() instanceof GroupIntoBatches.WithShardedKey) {
+              runnerSharding.set(true);
+            }
+            return CompositeBehavior.ENTER_TRANSFORM;
+          }
+        });
+        assertFalse("FILE_LOADS must not require runner-determined sharding", runnerSharding.get());
+      }
     }
   }
 

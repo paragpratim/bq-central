@@ -80,7 +80,8 @@ public final class StreamingDrTest {
         return write.withExtendedErrorInfo()
             .withFailedInsertRetryPolicy(InsertRetryPolicy.neverRetry());
       case FILE_LOADS:
-        return write.withTriggeringFrequency(Duration.standardMinutes(1));
+        return write.withNumFileShards(1)
+            .withTriggeringFrequency(Duration.standardMinutes(1));
       default:
         throw new IllegalArgumentException("Unsupported BigQuery write method: " + method);
     }

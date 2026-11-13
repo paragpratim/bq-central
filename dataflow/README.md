@@ -1,14 +1,11 @@
 # Dataflow streaming write test
 
 This Java Beam job generates random integers continuously and writes them to a
-BigQuery table with the exactly-once `STORAGE_WRITE_API` method. It uses the
-workload service account and does **not** select a BigQuery reservation. This
-tests the Storage Write API, not the load or query jobs in
-[scripts/README.md](../scripts/README.md). Those earlier job failures do not
-prove that Storage Write API writes will fail; record the actual result and
-error. The job can keep running and retrying an error instead of reaching a
-terminal failed state. This is a test, not a production pipeline or a reliable
-dead-letter strategy.
+BigQuery table using a selectable method: `STORAGE_WRITE_API`,
+`STREAMING_INSERTS`, or `FILE_LOADS`. It uses the workload service account and
+does **not** explicitly select a BigQuery reservation. The job can keep running
+and retrying an error instead of reaching a terminal failed state. This is a
+test, not a production pipeline or a reliable dead-letter strategy.
 
 The destination table is created if needed with this schema:
 
@@ -34,7 +31,9 @@ permissions or DR restrictions, before writes are attempted.
   an accessible subnetwork with Private Google Access. Verify these resources
   before running; workers use private IPs.
 - The worker service account needs Dataflow Worker, read/write access to the
-  staging bucket, and BigQuery access to create the table and write to it.
+  staging bucket, and BigQuery access to create the table and write to it. For
+  `FILE_LOADS`, it also needs permission to create BigQuery jobs in the job
+  project and access to the temporary GCS objects.
   See [Dataflow security and permissions](https://cloud.google.com/dataflow/docs/concepts/security-and-permissions).
 
 Run local tests from the repository root:
@@ -68,9 +67,17 @@ The [submission script](submit.sh) builds the job and submits it to
 `regions/europe-west4/subnetworks/dataflow-subnet-dataflow-test-290e-europewest4`.
 Confirm that `europe-west4` is the current primary.
 
+Select a method for each submission:
+
 ```sh
-bash dataflow/submit.sh
+WRITE_METHOD=STORAGE_WRITE_API bash dataflow/submit.sh
+WRITE_METHOD=STREAMING_INSERTS bash dataflow/submit.sh
+WRITE_METHOD=FILE_LOADS bash dataflow/submit.sh
 ```
+
+`bash dataflow/submit.sh` defaults to `STORAGE_WRITE_API`. Each command submits
+a separate unbounded, billable job; cancel each job when finished. To distinguish
+results, optionally set `OUTPUT_TABLE` to a different table for each run.
 
 To submit using your locally published Beam build, set its exact published
 version:
@@ -92,16 +99,29 @@ It submits billable resources using local ADC and stages code and dependencies
 in the bucket. A successful submission is not evidence that the write test
 passed.
 
-The test uses the BigQuery Storage Write API, which does not submit a
-BigQuery load or query job and does not expose a per-job reservation option.
-It uses one write stream with a five-second triggering frequency. Use Dataflow
-job logs and the `Write with Storage Write API` and `Surface write errors`
-stages to distinguish BigQuery rejection from setup, IAM, networking, or
-missing-table failures. Row-level write errors are surfaced through a worker
-exception; other errors can occur before they reach that output. Dataflow may
-retry bundles repeatedly.
+## Methods and results
+
+- `STORAGE_WRITE_API`: exactly-once Storage Write API with one stream and a
+  five-second triggering frequency.
+- `STREAMING_INSERTS`: BigQuery streaming inserts, with failed rows surfaced
+  without Beam's insert retry policy.
+- `FILE_LOADS`: uses one fixed file shard, stages files in the configured GCS
+  temp location and submits BigQuery load jobs every minute when data is
+  available. Fixed sharding avoids the Streaming Engine requirement for
+  runner-determined sharding. Load jobs count against BigQuery quotas and may
+  incur costs. BigQuery managed DR requires a `PIPELINE` reservation assignment
+  for load jobs; this script does not explicitly select a reservation. See
+  [load tests](../scripts/README.md).
+
+Use Dataflow logs and the `Write to BigQuery` stage to distinguish BigQuery
+rejection from setup, IAM, networking, or missing-table failures. The Storage
+Write API and streaming-insert methods surface row-level errors through worker
+exceptions; file-load failures are reported through the pipeline and load-job
+errors instead. Other failures can occur before the row-level error outputs.
+Dataflow may retry bundles repeatedly.
 
 This is an unbounded job and can continue accruing charges even on errors.
 Cancel it in the Dataflow console when finished. Do not infer success or failure
 from job state alone: inspect worker logs and, if writes are accepted, the test
-table. No particular failure has been verified for this pipeline.
+table. A job being in the running state alone does not establish that writes
+succeeded.
