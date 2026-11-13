@@ -66,4 +66,5 @@ The [manual failover workflow](.github/workflows/bq-failover.yml) promotes a
 selected region; hard failover can lose unreplicated data. Verify the new
 primary is ready and update job locations and reservation paths after
 failover. See the [scripts README](scripts/README.md) for test prerequisites,
-commands and results.
+commands and results, and the [Dataflow streaming test](dataflow/README.md)
+for a separate streaming-insert experiment.
