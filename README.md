@@ -49,7 +49,13 @@ managed by only one Terraform state.
 **Test cleanup:** This configuration permits Terraform to destroy datasets and
 sets `delete_dataset_contents_on_destroy = true`, deleting all contained tables
 and data. Apply this setting before running destroy so it is recorded in state;
-review the plan and back up any data first.
+review the plan and back up any data first. The manual GitHub Actions destroy
+requires `DESTROY` confirmation and detaches managed datasets and removes their
+secondary replicas before destroying resources. Stop Dataflow jobs first. This
+cleanup applies to that workflow, not a local `terraform destroy`. It uses
+the current primary and stops on inconsistent replica state or an unexpected
+reservation; a failed run may have partially completed and can need inspection
+before retrying.
 
 **Production:** Before deployment, set `delete_dataset_contents_on_destroy` to
 `false` and add `prevent_destroy = true` to the dataset's lifecycle block in
