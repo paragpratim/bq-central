@@ -2,8 +2,8 @@
 
 This Java Beam job generates random integers continuously and writes them to a
 BigQuery table using a selectable method: `STORAGE_WRITE_API`,
-`STREAMING_INSERTS`, or `FILE_LOADS`. It uses the workload service account and
-does **not** explicitly select a BigQuery reservation. The job can keep running
+`STREAMING_INSERTS`, or `FILE_LOADS`. It uses the workload service account.
+The job can keep running
 and retrying an error instead of reaching a terminal failed state. This is a
 test, not a production pipeline or a reliable dead-letter strategy.
 
@@ -33,7 +33,9 @@ permissions or DR restrictions, before writes are attempted.
 - The worker service account needs Dataflow Worker, read/write access to the
   staging bucket, and BigQuery access to create the table and write to it. For
   `FILE_LOADS`, it also needs permission to create BigQuery jobs in the job
-  project and access to the temporary GCS objects.
+  project (`dataflow-test-290e` for the submission script) and access to the
+  temporary GCS objects. It still needs access to the destination dataset,
+  even when it is in a different project.
   See [Dataflow security and permissions](https://cloud.google.com/dataflow/docs/concepts/security-and-permissions).
 
 Run local tests from the repository root:
@@ -76,8 +78,10 @@ WRITE_METHOD=FILE_LOADS bash dataflow/submit.sh
 ```
 
 `bash dataflow/submit.sh` defaults to `STORAGE_WRITE_API`. Each command submits
-a separate unbounded, billable job; cancel each job when finished. To distinguish
-results, optionally set `OUTPUT_TABLE` to a different table for each run.
+a separate unbounded, billable job; cancel each job when finished. `OUTPUT_TABLE`
+is a base table name: the job appends `_storagewrite`, `_streaming`, or
+`_fileload` according to the method. With the default base, the target tables
+are `df_test_storagewrite`, `df_test_streaming`, and `df_test_fileload`.
 
 To submit using your locally published Beam build, set its exact published
 version:
@@ -107,10 +111,12 @@ passed.
   without Beam's insert retry policy.
 - `FILE_LOADS`: uses one fixed file shard, stages files in the configured GCS
   temp location and submits BigQuery load jobs every minute when data is
-  available. Fixed sharding avoids the Streaming Engine requirement for
+  available. Load jobs run in the Dataflow `--project`, not the destination
+  table project. Fixed sharding avoids the Streaming Engine requirement for
   runner-determined sharding. Load jobs count against BigQuery quotas and may
   incur costs. BigQuery managed DR requires a `PIPELINE` reservation assignment
-  for load jobs; this script does not explicitly select a reservation. See
+  for load jobs; the code explicitly selects
+  `projects/bq-central-56a6/locations/europe-west4/reservations/central-dr`. See
   [load tests](../scripts/README.md).
 
 Use Dataflow logs and the `Write to BigQuery` stage to distinguish BigQuery
@@ -121,7 +127,12 @@ errors instead. Other failures can occur before the row-level error outputs.
 Dataflow may retry bundles repeatedly.
 
 This is an unbounded job and can continue accruing charges even on errors.
-Cancel it in the Dataflow console when finished. Do not infer success or failure
+To cancel all active Dataflow jobs in `dataflow-test-290e` across available
+regions, run `bash dataflow/cancel-jobs.sh` and confirm the displayed project
+name. This includes unrelated jobs and can discard in-flight data; jobs hidden
+by regional outages or started after the listing are not included. Cancellation
+is requested asynchronously, so check the final job states in Dataflow.
+Do not infer success or failure
 from job state alone: inspect worker logs and, if writes are accepted, the test
 table. A job being in the running state alone does not establish that writes
 succeeded.

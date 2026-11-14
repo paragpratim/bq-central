@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import com.google.api.services.bigquery.model.ErrorProto;
 import com.google.api.services.bigquery.model.TableDataInsertAllResponse.InsertErrors;
 import com.google.api.services.bigquery.model.TableRow;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -22,6 +23,7 @@ import org.apache.beam.sdk.io.gcp.bigquery.WriteResult;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.StreamingOptions;
+import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.transforms.DoFnTester;
 import org.apache.beam.sdk.transforms.GroupIntoBatches;
@@ -47,7 +49,7 @@ public class StreamingDrTestTest {
   public void createsMissingTableAndAppendsToExistingTable() {
     for (BigQueryIO.Write.Method method : methods()) {
       BigQueryIO.Write<TableRow> write =
-          StreamingDrTest.bigQueryWrite("test-project:test_dataset.test_table", method);
+          StreamingDrTest.bigQueryWrite("test-project:test_dataset.test_table", "load-project", method);
       DisplayData displayData = DisplayData.from(write);
       assertEquals(method, write.getMethod());
       assertTrue(displayData.items().stream().anyMatch(
@@ -55,6 +57,35 @@ public class StreamingDrTestTest {
       assertTrue(displayData.items().stream().anyMatch(
           item -> item.getKey().equals("writeDisposition") && item.getValue().equals("WRITE_APPEND")));
     }
+  }
+
+  @Test
+  public void routesEachMethodToItsOwnTable() {
+    assertEquals("test_table_storagewrite", StreamingDrTest.bigQueryWrite(
+        "test-project:test_dataset.test_table", "load-project", BigQueryIO.Write.Method.STORAGE_WRITE_API)
+        .getTable().get().getTableId());
+    assertEquals("test_table_streaming", StreamingDrTest.bigQueryWrite(
+        "test-project:test_dataset.test_table", "load-project", BigQueryIO.Write.Method.STREAMING_INSERTS)
+        .getTable().get().getTableId());
+    assertEquals("test_table_fileload", StreamingDrTest.bigQueryWrite(
+        "test-project:test_dataset.test_table", "load-project", BigQueryIO.Write.Method.FILE_LOADS)
+        .getTable().get().getTableId());
+  }
+
+  @Test
+  public void fileLoadsUseThePipelineProject() throws Exception {
+    StreamingDrTest.Options options = PipelineOptionsFactory
+        .fromArgs("--project=dataflow-test-290e").as(StreamingDrTest.Options.class);
+    BigQueryIO.Write<TableRow> write = StreamingDrTest.bigQueryWrite(
+        "test-project:test_dataset.test_table", options.getProject(), BigQueryIO.Write.Method.FILE_LOADS);
+    Method getter = BigQueryIO.Write.class.getDeclaredMethod("getLoadJobProjectId");
+    getter.setAccessible(true);
+    ValueProvider<?> project = (ValueProvider<?>) getter.invoke(write);
+    assertEquals("dataflow-test-290e", project.get());
+    assertThrows(IllegalArgumentException.class, () -> StreamingDrTest.bigQueryWrite(
+        "test-project:test_dataset.test_table", null, BigQueryIO.Write.Method.FILE_LOADS));
+    assertThrows(IllegalArgumentException.class, () -> StreamingDrTest.bigQueryWrite(
+        "test-project:test_dataset.test_table", "  ", BigQueryIO.Write.Method.FILE_LOADS));
   }
 
   @Test
@@ -69,7 +100,7 @@ public class StreamingDrTestTest {
           .apply(GenerateSequence.from(0).withRate(1, Duration.standardSeconds(1)))
           .apply(ParDo.of(new StreamingDrTest.GenerateRow()))
           .apply(StreamingDrTest.bigQueryWrite(
-              "test-project:test_dataset.test_table", method).withoutValidation());
+              "test-project:test_dataset.test_table", "load-project", method).withoutValidation());
       StreamingDrTest.surfaceWriteErrors(result, method);
       if (method == BigQueryIO.Write.Method.FILE_LOADS) {
         AtomicBoolean runnerSharding = new AtomicBoolean();
@@ -97,10 +128,10 @@ public class StreamingDrTestTest {
       assertEquals(method, parsed.getWriteMethod());
     }
     assertThrows(IllegalArgumentException.class,
-        () -> StreamingDrTest.bigQueryWrite("test-project:test_dataset.test_table",
+        () -> StreamingDrTest.bigQueryWrite("test-project:test_dataset.test_table", "load-project",
             BigQueryIO.Write.Method.DEFAULT));
     assertThrows(IllegalArgumentException.class,
-        () -> StreamingDrTest.bigQueryWrite("test-project:test_dataset.test_table",
+        () -> StreamingDrTest.bigQueryWrite("test-project:test_dataset.test_table", "load-project",
             BigQueryIO.Write.Method.STORAGE_API_AT_LEAST_ONCE));
   }
 
